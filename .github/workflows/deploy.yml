@@ -1,1 +1,39 @@
+name: CI Deploy to Render
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install pnpm
+        run: npm i -g pnpm
+
+      - name: Install shared-ts deps
+        working-directory: ./shared-ts
+        run: pnpm install
+
+      - name: Build and push (Auth)
+        run: |
+          curl -X POST "https://api.render.com/deploy/srv-${{ secrets.RENDER_SERVICE_ID_AUTH }}" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" || true
+
+      - name: Deploy Tutoring Engine
+        run: |
+          curl -X POST "https://api.render.com/deploy/srv-${{ secrets.RENDER_SERVICE_ID_TUTORING }}" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" || true
+
+      - name: Additional service deploys (add more as needed)
+        run: echo "Add more services deploy steps here..."
 
