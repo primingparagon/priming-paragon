@@ -1,1 +1,8 @@
-
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@priming/shared-ts/*": ["../../shared-ts/*"]
+    }
+  }
+}
