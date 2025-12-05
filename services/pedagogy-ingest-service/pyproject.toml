@@ -1,1 +1,11 @@
-
+[project]
+name = "pedagogy-ingest"
+version = "0.1.0"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "requests",
+  "beautifulsoup4",
+  "pydantic",
+  "python-dotenv"
+]
