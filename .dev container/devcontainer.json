@@ -1,1 +1,44 @@
+{
+  "name": "Priming Paragon Dev",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    },
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "none"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "editor.formatOnSave": true
+      },
+      "extensions": [
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "mhutchie.git-graph",
+        "github.copilot",
+        "GitHub.copilot-chat",
+        "bradlc.vscode-tailwindcss",
+        "ritwickdey.LiveServer",
+        "slevesque.vscode-theia-keybindings",
+        "syler.sass-indented",
+        "yzhang.markdown-all-in-one",
+        "formulahendry.auto-rename-tag"
+      ]
+    }
+  },
+
+  "remoteUser": "vscode"
+}
 
