@@ -1,7 +1,13 @@
-FROM node:20-alpine
+FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm install --production
+RUN npm install
 COPY . .
-EXPOSE 4000
-CMD ["node", "dist/index.js"]
+RUN npm run build || true
+
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app ./
+ENV NODE_ENV=production
+EXPOSE 4001
+CMD ["node","dist/main.js"]
