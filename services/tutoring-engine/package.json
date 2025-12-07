@@ -1,1 +1,7 @@
-
+{
+  "name": "tutoring-engine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Python FastAPI tutoring engine",
+  "scripts": {}
+}
