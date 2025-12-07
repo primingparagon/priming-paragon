@@ -1,4 +1,5 @@
 name: CI Deploy to Render
+
 on:
   push:
     branches:
@@ -7,6 +8,7 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -15,16 +17,37 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: 'npm'
+          check-latest: true
 
-      - name: Install pnpm
-        run: npm i -g pnpm
+      - name: Install latest npm
+        run: npm install -g npm
+
+      # --- INSTALL DEPENDENCIES FOR EACH SERVICE ---
 
       - name: Install shared-ts deps
         working-directory: ./shared-ts
-        run: pnpm install
+        run: npm install
 
-      - name: Build and push (Auth)
+      - name: Install Auth Service
+        working-directory: ./services/auth-service
+        run: npm install
+
+      - name: Install API Gateway
+        working-directory: ./services/api-gateway
+        run: npm install
+
+      - name: Install Tutoring Engine
+        working-directory: ./services/tutoring-engine
+        run: npm install
+
+      - name: Install Pedagogy Ingest
+        working-directory: ./services/pedagogy-ingest
+        run: npm install
+
+      # --- DEPLOY TO RENDER ---
+
+      - name: Deploy Auth Service
         run: |
           curl -X POST "https://api.render.com/deploy/srv-${{ secrets.RENDER_SERVICE_ID_AUTH }}" \
             -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" || true
@@ -34,5 +57,13 @@ jobs:
           curl -X POST "https://api.render.com/deploy/srv-${{ secrets.RENDER_SERVICE_ID_TUTORING }}" \
             -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" || true
 
-      - name: Additional service deploys (add more as needed)
-        run: echo "Add more services deploy steps here..."
+      - name: Deploy API Gateway
+        run: |
+          curl -X POST "https://api.render.com/deploy/srv-${{ secrets.RENDER_SERVICE_ID_GATEWAY }}" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" || true
+
+      - name: Deploy Pedagogy Ingest
+        run: |
+          curl -X POST "https://api.render.com/deploy/srv-${{ secrets.RENDER_SERVICE_ID_PEDAGOGY }}" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" || true
+
