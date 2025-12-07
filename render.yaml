@@ -42,8 +42,12 @@ ervices:
     dockerfilePath: services/tutoring-engine/Dockerfile
 
   - type: background_worker
-    name: pedagogy-ingest-service
-    env: docker
-    repo: primingparagon/priming-paragon
-    branch: main
-    dockerfilePath: services/pedagogy-ingest-service/Dockerfile
+    - name: pedagogy-ingest-service
+  type: worker
+  env: docker
+  rootDir: services/pedagogy-ingest-service
+  dockerfilePath: services/pedagogy-ingest-service/Dockerfile
+  envVars:
+    - key: SCRAPER_MODE
+      value: production
+    - fromGroup: global-envs
