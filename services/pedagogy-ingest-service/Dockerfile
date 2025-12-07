@@ -1,6 +1,16 @@
 FROM python:3.11-slim
+
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt || true
+
+# Install Poetry if the project uses pyproject.toml
+RUN pip install poetry
+
+COPY pyproject.toml poetry.lock* ./
+
+RUN poetry install --no-root --no-interaction --no-ansi
+
 COPY . .
-CMD ["python","src/main.py"]
+
+ENV SCRAPER_MODE=production
+
+CMD ["python", "src/main.py"]
