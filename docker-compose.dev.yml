@@ -1,1 +1,48 @@
+version: '3.8'
+services:
+  api-gateway:
+    build: ./services/api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
 
+  auth-service:
+    build: ./services/auth-service
+    ports:
+      - "4001:4001"
+    environment:
+      - PORT=4001
+
+  crm-service:
+    build: ./services/crm-service
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+
+  audit-log-service:
+    build: ./services/audit-log-service
+    ports:
+      - "7005:7005"
+    environment:
+      - PORT=7005
+
+  assessment-service:
+    build: ./services/assessment-service
+    ports:
+      - "7006:7006"
+    environment:
+      - PORT=7006
+
+  tutoring-engine:
+    build: ./services/tutoring-engine
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+
+  pedagogy-ingest:
+    build: ./services/pedagogy-ingest-service
+    environment:
+      - SCRAPER_MODE=development
