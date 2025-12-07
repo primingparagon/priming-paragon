@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 WORKDIR /app
-COPY pip install -r pyproject.toml
-RUN python src/main.py
+COPY pyproject.toml .
+RUN pip install -r pyproject.toml install python src/main.py
 COPY . .
 ENV NODE_ENV=production
 EXPOSE 8004
