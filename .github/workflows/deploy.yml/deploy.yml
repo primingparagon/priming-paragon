@@ -19,6 +19,13 @@ jobs:
           node-version: 20
           cache: 'npm'
           check-latest: true
+          
+- name: Render Deploy
+        uses: render-examples/deploy-render@v1
+        with:
+          serviceId: ${{ secrets.RENDER_SERVICE_ID }}
+          apiKey: ${{ secrets.RENDER_API_KEY }}
+          waitForSuccessfulDeploy: true
 
       - name: Install latest npm
         run: npm install -g npm
