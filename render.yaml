@@ -1,24 +1,49 @@
-services:
-  - type: web
-    name: audit-log-service
+ervices:
+  - type: web_service
+    name: api-gateway
     env: docker
-    plan: starter
-    dockerfilePath: ./services/audit-log-service/Dockerfile
+    repo: primingparagon/priming-paragon
+    branch: main
+    dockerfilePath: services/api-gateway/Dockerfile
 
-  - type: web
-    name: assessment-service
+  - type: web_service
+    name: auth-service
     env: docker
-    plan: starter
-    dockerfilePath: ./services/assessment-service/Dockerfile
+    repo: primingparagon/priming-paragon
+    branch: main
+    dockerfilePath: services/auth-service/Dockerfile
 
-  - type: web
+  - type: web_service
     name: crm-service
     env: docker
-    plan: starter
-    dockerfilePath: ./services/crm-service/Dockerfile
+    repo: primingparagon/priming-paragon
+    branch: main
+    dockerfilePath: services/crm-service/Dockerfile
 
-  - type: web
-    name: pedagogy-ingest
+  - type: web_service
+    name: audit-log-service
     env: docker
-    plan: starter
-    dockerfilePath: ./services/pedagogy-ingest/Dockerfile
+    repo: primingparagon/priming-paragon
+    branch: main
+    dockerfilePath: services/audit-log-service/Dockerfile
+
+  - type: web_service
+    name: assessment-service
+    env: docker
+    repo: primingparagon/priming-paragon
+    branch: main
+    dockerfilePath: services/assessment-service/Dockerfile
+
+  - type: web_service
+    name: tutoring-engine
+    env: docker
+    repo: primingparagon/priming-paragon
+    branch: main
+    dockerfilePath: services/tutoring-engine/Dockerfile
+
+  - type: background_worker
+    name: pedagogy-ingest-service
+    env: docker
+    repo: primingparagon/priming-paragon
+    branch: main
+    dockerfilePath: services/pedagogy-ingest-service/Dockerfile
