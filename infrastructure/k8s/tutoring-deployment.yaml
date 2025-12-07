@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tutoring-engine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tutoring-engine
+  template:
+    metadata:
+      labels:
+        app: tutoring-engine
+    spec:
+      containers:
+        - name: tutoring
+          image: primingparagon/tutoring-engine:latest
+          ports:
+            - containerPort: 8000
