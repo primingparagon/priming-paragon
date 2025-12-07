@@ -1,4 +1,4 @@
-ervices:
+Services:
   - type: web_service
     name: api-gateway
     env: docker
