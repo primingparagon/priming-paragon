@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: audit-log-service
+    env: docker
+    plan: starter
+    dockerfilePath: ./services/audit-log-service/Dockerfile
+
+  - type: web
+    name: assessment-service
+    env: docker
+    plan: starter
+    dockerfilePath: ./services/assessment-service/Dockerfile
+
+  - type: web
+    name: crm-service
+    env: docker
+    plan: starter
+    dockerfilePath: ./services/crm-service/Dockerfile
+
+  - type: web
+    name: pedagogy-ingest
+    env: docker
+    plan: starter
+    dockerfilePath: ./services/pedagogy-ingest/Dockerfile
