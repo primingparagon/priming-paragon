@@ -1,5 +1,5 @@
 name: Render deploy (sync envs from GitHub Secrets)
-
+Sync secrets to Render & Deploy
 on:
   push:
     branches: [ main ]
@@ -14,9 +14,20 @@ jobs:
       - name: Set variables
         run: echo "Preparing to sync secrets to Render"
 
-      - name: Sync & Deploy each service
+      - name: Sync envs and trigger deploy
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          
+           # service ids
+          AUTH_ID: srv-d4qg5a49c44c73bcfc6g
+          GATEWAY_ID: srv-d4qga06uk2gs73fmdg20
+          TUTORING_ID: srv-d4qgbh3e5dus73en8uig
+          PED_ID: srv-d4qgckggjchc73bbktm0
+          CRM_ID: srv-d4qgdip5pdvs738nh3ug
+          ASSESS_ID: srv-d4qgeo0gjchc73bblsjg
+          AUDIT_ID: srv-d4qgg7idbo4c73brl9r0
+
+           # secrets to push
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -66,6 +77,8 @@ jobs:
           # CRM
           CRM_ID="srv-d4qgdip5pdvs738nh3ug"
           create_env "$CRM_ID" "DATABASE_URL" "${DATABASE_URL}"
+          create_env "$ASSESS_ID" "DATABASE_URL" "${DATABASE_URL}"
+          create_env "$AUDIT_ID" "DATABASE_URL" "${DATABASE_URL}"
 
           # Assessment + audit-log (optional)
           ASSESS_ID="srv-d4qgeo0gjchc73bblsjg"
@@ -74,9 +87,8 @@ jobs:
           create_env "$ASSESS_ID" "DATABASE_URL" "${DATABASE_URL}"
           create_env "$AUDIT_ID" "DATABASE_URL" "${DATABASE_URL}"
 
-          # Trigger deploys
-          curl -s -X POST "https://api.render.com/deploy/${AUTH_ID}" -H "Authorization: Bearer ${RENDER_API_KEY}" || true
-          curl -s -X POST "https://api.render.com/deploy/srv-d4qga06uk2gs73fmdg20" -H "Authorization: Bearer ${RENDER_API_KEY}" || true
-          curl -s -X POST "https://api.render.com/deploy/${TUTORING_ID}" -H "Authorization: Bearer ${RENDER_API_KEY}" || true
-          curl -s -X POST "https://api.render.com/deploy/${PED_ID}" -H "Authorization: Bearer ${RENDER_API_KEY}" || true
-          curl -s -X POST "https://api.render.com/deploy/${CRM_ID}" -H "Authorization: Bearer ${RENDER_API_KEY}" || true
+          # trigger deploys
+          for id in "$AUTH_ID" "$GATEWAY_ID" "$TUTORING_ID" "$PED_ID" "$CRM_ID" "$ASSESS_ID" "$AUDIT_ID"; do
+            echo "Triggering deploy for $id"
+            curl -s -X POST "https://api.render.com/deploy/${id}" -H "Authorization: Bearer ${RENDER_API_KEY}" || true
+          done
