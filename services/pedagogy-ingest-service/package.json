@@ -1,1 +1,7 @@
-
+{
+  "name": "pedagogy-ingest-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Python ingestion worker",
+  "scripts": {}
+}
