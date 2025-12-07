@@ -42,7 +42,12 @@ services:
     environment:
       - PORT=8000
 
-  pedagogy-ingest:
-    build: ./services/pedagogy-ingest-service
+  pedagogy-ingest-service:
+    build:
+      context: ./services/pedagogy-ingest-service
+    container_name: pedagogy-ingest-service
+    command: python src/main.py
     environment:
-      - SCRAPER_MODE=development
+      SCRAPER_MODE: "development"
+    volumes:
+      - ./services/pedagogy-ingest-service:/app
