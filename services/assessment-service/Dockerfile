@@ -1,7 +1,8 @@
 FROM python:3.11-slim
 WORKDIR /app
 COPY pyproject.toml .
-RUN pip install --upgrade pip && pip install fastapi uvicorn pydantic python-dotenv
-COPY src/ ./src
+RUN pip install -r pyproject.toml install python src/main.py
+COPY . .
+ENV NODE_ENV=production
 EXPOSE 8002
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]
