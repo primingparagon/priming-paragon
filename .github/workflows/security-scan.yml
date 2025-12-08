@@ -1,0 +1,220 @@
+name: Security Scan
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+      - release/*
+      - hotfix/*
+
+permissions:
+  contents: read
+  security-events: write
+  checks: write
+
+jobs:
+  codeql-analysis:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: javascript,python
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v2
+      - name: Run CodeQL
+        uses: github/codeql-action/analyze@v2
+
+  secret-scan:
+    name: Secret & Entropy Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup gitleaks
+        run: |
+          curl -sSfL https://github.com/zricethezav/gitleaks/releases/latest/download/gitleaks-linux-amd64 -o gitleaks
+          chmod +x gitleaks
+      - name: Run gitleaks
+        run: |
+          ./gitleaks detect --source . --report-format json --report-path gitleaks-report.json || true
+      - name: Upload gitleaks report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.json
+
+  dependency-audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [services/api-gateway, services/auth-service, frontend/web-client]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - name: npm ci (if package.json exists)
+        working-directory: ${{ matrix.service }}
+        run: |
+          if [ -f package.json ]; then npm ci --ignore-scripts; fi
+      - name: npm audit fix --json
+        working-directory: ${{ matrix.service }}
+        continue-on-error: true
+        run: |
+          if [ -f package.json ]; then npm audit --json > npm-audit.json || true; fi
+      - name: Upload audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-${{ matrix.service }}
+          path: ${{ matrix.service }}/npm-audit.json
+
+  python-audit:
+    name: Python Audit (pip-audit)
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.head.ref, 'py') || github.event_name == 'push'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Run pip-audit for each Python service
+        run: |
+         name: Security Scan
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+      - release/*
+      - hotfix/*
+
+permissions:
+  contents: read
+  security-events: write
+  checks: write
+
+jobs:
+  codeql-analysis:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: javascript,python
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v2
+      - name: Run CodeQL
+        uses: github/codeql-action/analyze@v2
+
+  secret-scan:
+    name: Secret & Entropy Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup gitleaks
+        run: |
+          curl -sSfL https://github.com/zricethezav/gitleaks/releases/latest/download/gitleaks-linux-amd64 -o gitleaks
+          chmod +x gitleaks
+      - name: Run gitleaks
+        run: |
+          ./gitleaks detect --source . --report-format json --report-path gitleaks-report.json || true
+      - name: Upload gitleaks report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.json
+
+  dependency-audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [services/api-gateway, services/auth-service, frontend/web-client]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - name: npm ci (if package.json exists)
+        working-directory: ${{ matrix.service }}
+        run: |
+          if [ -f package.json ]; then npm ci --ignore-scripts; fi
+      - name: npm audit fix --json
+        working-directory: ${{ matrix.service }}
+        continue-on-error: true
+        run: |
+          if [ -f package.json ]; then npm audit --json > npm-audit.json || true; fi
+      - name: Upload audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-${{ matrix.service }}
+          path: ${{ matrix.service }}/npm-audit.json
+
+  python-audit:
+    name: Python Audit (pip-audit)
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.head.ref, 'py') || github.event_name == 'push'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Run pip-audit for each Python service
+        run: |
+          for dir in services/*; do
+            if [ -f "$dir/pyproject.toml" ] || [ -f "$dir/requirements.txt" ]; then
+              pip-audit -r $dir/requirements.txt || true
+            fi
+          done
+
+  pre-commit:
+    name: Pre-commit checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install pre-commit
+        run: pip install pre-commit
+      - name: Run pre-commit against changed files
+        run: |
+          pre-commit run --all-files || true
