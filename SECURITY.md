@@ -2,6 +2,10 @@
 
 This repository (Priming Paragon) follows a responsible disclosure policy and a standard security posture designed to detect, mitigate, and remediate supply-chain and repository compromise quickly. If you discover a security issue, please report it immediately following the steps below.
 
+If you discover a vulnerability, please submit it via GitHub Private Vulnerability Reporting and aneyb@icloud.com.  
+Do not disclose publicly.  
+We will respond within 48 hours (maximum).
+
 ## Contact & Reporting
 - Preferred: email primingparagons@gmail.com with subject: **SECURITY REPORT — [short summary]**
 - Include: affected repository path, steps to reproduce, PoC (if safe), timestamps, and your contact method.
