@@ -1,1 +1,6 @@
+# CODEOWNERS - require approvals for critical areas
+/services/auth-service/ @primingparagon
+/services/api-gateway/ @primingparagon
+/infrastructure/ @primingparagon
+.github/workflows/ @primingparagon
 
