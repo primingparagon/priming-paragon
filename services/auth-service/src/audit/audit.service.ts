@@ -36,17 +36,21 @@ export class AuditService {
     // -----------------------------
     // Defensive Validation (Critical)
     // -----------------------------
-    if (
-      !Number.isInteger(data.adminId) ||
-      !Number.isInteger(data.targetUserId) ||
-      data.adminId <= 0 ||
-      data.targetUserId <= 0 ||
-      typeof data.actionType !== 'string' ||
-      data.actionType.trim().length === 0
-    ) {
-      this.logger.error('INVALID_ADMIN_AUDIT_PAYLOAD', { data });
-      return;
-    }
+    const isValid =
+  Number.isInteger(data.adminId) &&
+  Number.isInteger(data.targetUserId) &&
+  data.adminId > 0 &&
+  data.targetUserId > 0 &&
+  typeof data.actionType === 'string' &&
+  data.actionType.trim().length > 0;
+
+if (!isValid) {
+  this.logger.error('AUDIT_LOG_VALIDATION_FAILED', {
+    reason: 'Input payload invalid',
+    data,
+  });
+  return; // Exit early
+}
 
     // -----------------------------
     // Runtime Monitoring
