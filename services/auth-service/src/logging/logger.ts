@@ -1,81 +1,69 @@
+// services/auth-service/src/logging/logger.ts
 import winston from 'winston';
 import { LoggingWinston } from '@google-cloud/logging-winston';
 
-// Define the environment, defaulting to 'development' if not set
+// -----------------------------
+// 1. Environment & Log Level
+// -----------------------------
 const environment = process.env.NODE_ENV || 'development';
-// Define the default log level based on the environment
-const defaultLogLevel = environment === 'production' ? 'info' : 'debug';
+const logLevel = environment === 'production' ? 'info' : 'debug';
 
-// ----------------------------------------------------------------------
-// 1. Define Formats
-// ----------------------------------------------------------------------
-
-// Format for local development (human-readable)
+// -----------------------------
+// 2. Define Formats
+// -----------------------------
 const devFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.colorize(),
-  // Use a custom printf format for console readability
   winston.format.printf(({ level, message, timestamp, ...metadata }) => {
     let log = `[${timestamp}] ${level}: ${message}`;
-    // Append metadata if it exists (for diversity in logging output)
     if (Object.keys(metadata).length > 0) {
-        log += ` ${JSON.stringify(metadata)}`;
+      log += ` ${JSON.stringify(metadata)}`;
     }
     return log;
   })
 );
 
-// Format for production (structured JSON for log aggregators/analysis)
-const prodFormat = winston.format.json();
+const prodFormat = winston.format.combine(
+  winston.format.timestamp(),
+  winston.format.json()
+);
 
-// ----------------------------------------------------------------------
-// 2. Define Transports (Console and Google Cloud)
-// ----------------------------------------------------------------------
-
-// Base transports array (starts with console for development)
-const transports: winston.transports.Transport[] = [
+// -----------------------------
+// 3. Define Transports
+// -----------------------------
+const transports: (winston.transport | LoggingWinston)[] = [
   new winston.transports.Console({
+    level: logLevel,
     format: devFormat,
-    level: defaultLogLevel, // Use the environment variable
-    handleExceptions: true, // Console should always handle exceptions
-  }),
+    handleExceptions: true
+  })
 ];
 
-let cloudLoggingTransport: LoggingWinston | undefined;
-
-// Conditionally add the Google Cloud Logging transport ONLY in production
 if (environment === 'production') {
-    cloudLoggingTransport = new LoggingWinston({
-        logName: 'admin_audit_logs',
-        // Efficient logging metadata for GCloud filtering
-        resource: {
-            type: 'cloud_run_revision',
-            labels: {
-                service_name: 'auth-service',
-            }
-        },
-        // The GCloud transport automatically handles exceptions
-        handleExceptions: true,
-    });
-    transports.push(cloudLoggingTransport);
+  const cloudLoggingTransport = new LoggingWinston({
+    logName: 'admin_audit_logs',
+    resource: {
+      type: 'cloud_run_revision',
+      labels: { service_name: 'auth-service' }
+    },
+    handleExceptions: true
+  });
+  transports.push(cloudLoggingTransport);
 }
 
-
-// ----------------------------------------------------------------------
-// 3. Create the Logger Instance
-// ----------------------------------------------------------------------
-
+// -----------------------------
+// 4. Create Logger Instance
+// -----------------------------
 export const logger = winston.createLogger({
-  level: defaultLogLevel,
-  // Use the production format as the default for the main logger instance
+  level: logLevel,
   format: prodFormat,
-  transports: transports,
-  // Ensure rejections are caught globally (using all available transports)
-  rejectionHandlers: transports,
+  transports,
+  exceptionHandlers: transports,
+  rejectionHandlers: transports
 });
 
-
-// Optional: Inform developer that handlers are active
+// Optional: Inform developer that logger is active
 if (environment !== 'production') {
-    logger.debug(`Logger initialized in ${environment} mode at level: ${defaultLogLevel}`);
+  logger.debug(`Logger initialized in ${environment} mode at level: ${logLevel}`);
 }
+
