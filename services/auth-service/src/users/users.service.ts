@@ -1,6 +1,6 @@
 // services/auth-service/src/users/users.service.ts
 import { Pool, QueryResult } from 'pg';
-import { User } from './user.entity';
+import { User, UserDatabaseRecord } from './user.entity';
 import winston from 'winston';
 
 // Structured Logger
