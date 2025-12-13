@@ -4,73 +4,78 @@ import { LoggingWinston } from '@google-cloud/logging-winston';
 // Define the environment, defaulting to 'development' if not set
 const environment = process.env.NODE_ENV || 'development';
 // Define the default log level based on the environment
-const logLevel = environment === 'production' ? 'info' : 'debug';
+const defaultLogLevel = environment === 'production' ? 'info' : 'debug';
 
 // ----------------------------------------------------------------------
-// 1. Define Transports (Console and Google Cloud)
+// 1. Define Formats
 // ----------------------------------------------------------------------
 
-const transports: winston.transports.ConsoleTransportInstance[] | (winston.transports.ConsoleTransportInstance | LoggingWinston)[] = [
-  // Console transport: Used in development/staging, or as a fallback for cloud infrastructure
+// Format for local development (human-readable)
+const devFormat = winston.format.combine(
+  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  winston.format.colorize(),
+  // Use a custom printf format for console readability
+  winston.format.printf(({ level, message, timestamp, ...metadata }) => {
+    let log = `[${timestamp}] ${level}: ${message}`;
+    // Append metadata if it exists (for diversity in logging output)
+    if (Object.keys(metadata).length > 0) {
+        log += ` ${JSON.stringify(metadata)}`;
+    }
+    return log;
+  })
+);
+
+// Format for production (structured JSON for log aggregators/analysis)
+const prodFormat = winston.format.json();
+
+// ----------------------------------------------------------------------
+// 2. Define Transports (Console and Google Cloud)
+// ----------------------------------------------------------------------
+
+// Base transports array (starts with console for development)
+const transports: winston.transports.Transport[] = [
   new winston.transports.Console({
-    // Use simple format for human readability in development
-    format: winston.format.combine(
-        winston.format.colorize(),
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.colorize(),
-    winston.format.printf(({ level, message, timestamp }) => `[${timestamp}] ${level}: ${message}`)
-)
-
-    ),
-    level: 'loglevel', // Console always shows debug info locally
+    format: devFormat,
+    level: defaultLogLevel, // Use the environment variable
+    handleExceptions: true, // Console should always handle exceptions
   }),
 ];
 
-// In production environments, add the Google Cloud Logging transport
+let cloudLoggingTransport: LoggingWinston | undefined;
+
+// Conditionally add the Google Cloud Logging transport ONLY in production
 if (environment === 'production') {
-    transports.push(
-        new LoggingWinston({
-            // 'admin_audit_logs' is a good, specific log name
-            logName: 'admin_audit_logs',
-            // Set resource type for clearer categorization in GCloud UI
-            resource: {
-                type: 'cloud_run_revision', // Adjust based on your GCloud service type (e.g., k8s_container, gce_instance)
-                labels: {
-                    service_name: 'auth-service', // Name of your microservice
-                }
-            },
-            // The GCloud transport handles JSON formatting automatically
-        })
-    );
+    cloudLoggingTransport = new LoggingWinston({
+        logName: 'admin_audit_logs',
+        // Efficient logging metadata for GCloud filtering
+        resource: {
+            type: 'cloud_run_revision',
+            labels: {
+                service_name: 'auth-service',
+            }
+        },
+        // The GCloud transport automatically handles exceptions
+        handleExceptions: true,
+    });
+    transports.push(cloudLoggingTransport);
 }
 
+
 // ----------------------------------------------------------------------
-// 2. Create the Logger Instance
+// 3. Create the Logger Instance
 // ----------------------------------------------------------------------
 
 export const logger = winston.createLogger({
-  level: logLevel, // Dynamically set the default log level (info in prod, debug in dev)
-  // Use a generic JSON format for production environments
-  format: winston.format.json(),
+  level: defaultLogLevel,
+  // Use the production format as the default for the main logger instance
+  format: prodFormat,
   transports: transports,
-  // Add exception and rejection handlers for robust application monitoring
-  exceptionHandlers: transports,
-rejectionHandlers: transports,
-
-    new winston.transports.Console({
-        format: winston.format.simple()
-    }),
-    ...(environment === 'production' ? [new LoggingWinston({ logName: 'admin_audit_logs_exceptions' })] : []),
-  ],
-  rejectionHandlers: [
-    new winston.transports.Console({
-        format: winston.format.simple()
-    }),
-  ],
+  // Ensure rejections are caught globally (using all available transports)
+  rejectionHandlers: transports,
 });
+
 
 // Optional: Inform developer that handlers are active
 if (environment !== 'production') {
-    logger.debug(`Logger initialized in ${environment} mode at level: ${logLevel}`);
+    logger.debug(`Logger initialized in ${environment} mode at level: ${defaultLogLevel}`);
 }
