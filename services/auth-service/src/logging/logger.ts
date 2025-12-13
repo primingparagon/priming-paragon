@@ -16,9 +16,14 @@ const transports: winston.transports.ConsoleTransportInstance[] | (winston.trans
     // Use simple format for human readability in development
     format: winston.format.combine(
         winston.format.colorize(),
-        winston.format.simple()
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.colorize(),
+    winston.format.printf(({ level, message, timestamp }) => `[${timestamp}] ${level}: ${message}`)
+)
+
     ),
-    level: 'debug', // Console always shows debug info locally
+    level: 'loglevel', // Console always shows debug info locally
   }),
 ];
 
@@ -50,7 +55,9 @@ export const logger = winston.createLogger({
   format: winston.format.json(),
   transports: transports,
   // Add exception and rejection handlers for robust application monitoring
-  exceptionHandlers: [
+  exceptionHandlers: transports,
+rejectionHandlers: transports,
+
     new winston.transports.Console({
         format: winston.format.simple()
     }),
