@@ -2,41 +2,72 @@
 
 // ... (imports and existing app setup code above this line) ...
 
+// Define environment variables outside of the route handler to use them consistently
+const environment = process.env.NODE_ENV || 'development';
+const instanceId = process.env.INSTANCE_ID || uuidv4(); // Requires uuid import in the server file
+
 // ---------------------------------------------------
 // 8a. Health Check / Readiness Endpoint
 // ---------------------------------------------------
-// Checks DB and Redis connectivity, returns correlation ID for tracing
+// Checks DB and Redis connectivity, measures latency, returns correlation ID for tracing
 app.get("/health", async (req: Request, res: Response) => {
-  // Always capture correlation ID for distributed tracing and error correlation
   const correlationId = req.correlationId; 
   const timestamp = new Date().toISOString();
+  const start = Date.now(); 
+  
+  let dbStatus = 'unreachable';
+  let redisStatus = 'unreachable';
 
   try {
-    // Check PostgreSQL connectivity by running a minimal query
+    // Check PostgreSQL connectivity
     await pool.query('SELECT 1');
+    dbStatus = 'ok';
 
-    // Check Redis connectivity by sending a PING command
+    // Check Redis connectivity
     await redis.ping();
+    redisStatus = 'ok';
 
-    // If both succeed, return a 200 OK status
-    res.status(200).json({ 
+    const durationMs = Date.now() - start;
+
+    // Return a 200 OK status with full details
+    res.status(200).json({
       status: "ok",
-      db: "ok",
-      redis: "ok",
       service: "auth-service",
+      environment,
+      instanceId,
+      db: dbStatus,
+      redis: redisStatus,
       correlationId,
-      timestamp // Added timestamp to readiness check
+      timestamp,
+      latencyMs: durationMs
     });
 
   } catch (err) {
-    // If either fails, return a 500 Internal Server Error status
-    logger.error('HEALTH_CHECK_FAILURE', { error: err, correlationId });
+    const durationMs = Date.now() - start;
+
+    // Log the failure with detailed context for observability
+    logger.error('HEALTH_CHECK_FAILURE', {
+        event: 'health_check_failure',
+        service: 'auth-service',
+        environment,
+        instanceId,
+        correlationId,
+        durationMs,
+        dbStatus,
+        redisStatus,
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined
+    });
+    
     res.status(500).json({ 
       status: "error",
       error: err instanceof Error ? err.message : String(err),
       service: "auth-service",
+      environment,
+      instanceId,
       correlationId,
-      timestamp
+      timestamp,
+      latencyMs: durationMs
     });
   }
 });
@@ -45,18 +76,23 @@ app.get("/health", async (req: Request, res: Response) => {
 // 8b. Liveness Check Endpoint
 // ---------------------------------------------------
 // Simple check to see if the service process is alive.
-// Returns correlationId and timestamp for tracing.
+// Returns correlationId, timestamp, and instance info for tracing.
 app.get("/healthz", (req: Request, res: Response) => {
     const correlationId = req.correlationId;
     const timestamp = new Date().toISOString();
+    const start = Date.now();
 
     try {
+        const durationMs = Date.now() - start;
         // Minimal response: service is alive
         res.status(200).json({
             status: "alive",
             service: "auth-service",
+            environment,
+            instanceId,
             correlationId,
-            timestamp // Added timestamp to liveness check
+            timestamp,
+            latencyMs: durationMs
         });
     } catch (err) {
         logger.error('LIVENESS_CHECK_FAILURE', {
