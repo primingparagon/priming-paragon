@@ -1,160 +1,80 @@
-// services/auth-service/src/server.ts (Final Version)
+// services/auth-service/src/index.ts
 
 import express, { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { Pool } from 'pg';
-import dotenv from 'dotenv';
-import cors from 'cors';
-import bodyParser from 'body-parser';
-import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
-import { v4 as uuidv4 } from 'uuid';
-import Redis from 'ioredis'; // Ensure ioredis is installed
-
-import { AuditService } from './audit/audit.service';
-// Ensure these imports align with your file structure
-import { adminAuditMiddleware, requestIdMiddleware, initAuditQueueProcessor } from './audit/adminAuditMiddleware';
 import { logger } from './logging/logger';
+import { adminLogsRouter } from './admin/adminLogsController';
+import { anomalyContext } from './security/anomaly-engine';
 
-dotenv.config();
+// NOTE: The Express Request interface needs to be extended globally 
+// in a shared type definition file (e.g., src/types/express.d.ts) 
+// for 'req.user' and 'req.correlationId' to be known here.
 
-// ---------------------------------------------------
-// 1. Core Service Initialization
-// ---------------------------------------------------
+// --- Database Setup ---
+const pgPool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  // Example secure options (ensure these ENV vars are set)
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: true } : false,
+  max: 20, // Max concurrent connections
+  idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
+});
+
+// --- Express App ---
 const app = express();
-const PORT = process.env.PORT || 4000;
-const JWT_SECRET = process.env.JWT_SECRET;
+app.use(express.json());
 
-if (!JWT_SECRET) {
-    logger.error("FATAL_ERROR: JWT_SECRET is not defined. Service cannot start.");
-    process.exit(1);
-}
+// --- Context Middleware ---
+// Wraps each request in AsyncLocalStorage for anomalyContext
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const correlationId = (req.headers['x-correlation-id'] as string) || crypto.randomUUID();
+  res.setHeader('X-Correlation-Id', correlationId);
 
-// ---------------------------------------------------
-// 2. Database and Services Setup
-// ---------------------------------------------------
-const pool = new Pool({
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_NAME,
-  password: process.env.DB_PASSWORD,
-  port: parseInt(process.env.DB_PORT || '5432', 10),
+  // Extract metadata for logging and anomaly context
+  const context = {
+    // userId might be null if middleware runs before auth
+    userId: req.user?.userId ?? null, 
+    correlationId,
+    ip: req.ip ?? null, // req.ip might be undefined depending on proxy settings
+    route: req.originalUrl,
+    userAgent: req.headers['user-agent'] ?? null
+  };
+
+  // Run the rest of the application pipeline within this specific context
+  anomalyContext.run(context, () => next());
 });
 
-const auditService = new AuditService(pool, logger);
-
-// ---------------------------------------------------
-// 2b. Redis for Queue & Rate Limiting
-// ---------------------------------------------------
-const redis = new Redis(process.env.REDIS_URL);
-
-// ---------------------------------------------------
-// 3. Global Exception Handling
-// ---------------------------------------------------
-process.on('uncaughtException', (error) => {
-    logger.error('UNCAUGHT_EXCEPTION', { error: error.message, stack: error.stack });
+// --- Health Endpoints ---
+app.get('/health', (req: Request, res: Response) => {
+  // Example of accessing context within a handler
+  // const store = anomalyContext.getStore(); 
+  res.json({ status: 'ok', service: 'auth-service' });
 });
+app.get('/', (req: Request, res: Response) => res.send('auth-service running'));
 
-process.on('unhandledRejection', (reason, promise) => {
-    logger.error('UNHANDLED_REJECTION', { reason: String(reason), promise });
-});
+// --- Routers ---
+// Pass the shared PG Pool to the router configuration functions
+app.use(adminLogsRouter(pgPool));
+// Example: app.use('/auth', authRouter(pgPool));
 
-// ---------------------------------------------------
-// 4. Middleware Stack
-// ---------------------------------------------------
-app.use(cors());
-app.use(bodyParser.json());
-app.use(requestIdMiddleware);
+// --- Start Server with DB Connection ---
+const port = process.env.PORT || 4001;
 
-// Initialize the persistent Redis queue processor once
-// (Remember: this ideally runs in a separate worker process in prod)
-initAuditQueueProcessor(auditService);
-
-// ---------------------------------------------------
-// 5. Rate Limiting Middleware (Enhanced Type Safety)
-// ---------------------------------------------------
-const rateLimit = (keyPrefix: string, limit: number, windowSec: number) => {
-    return async (req: Request, res: Response, next: NextFunction) => {
-        // req.ip is guaranteed by express in standardized environments
-        const ipAddress = req.ip as string; 
-        try {
-            const key = `${keyPrefix}:${ipAddress}`;
-            // Use HSET/HGET/EXPIRE for efficiency in Redis 
-            const count = await redis.incr(key);
-            if (count === 1) {
-                await redis.expire(key, windowSec);
-            }
-            if (count > limit) {
-                logger.warn('RATE_LIMIT_EXCEEDED', { ip: ipAddress, route: req.path, correlationId: req.correlationId });
-                return res.status(429).json({ message: 'Too many requests. Try later.' });
-            }
-            next();
-        } catch (err) {
-            logger.error('RATE_LIMIT_ERROR', { error: err, ip: ipAddress, correlationId: req.correlationId });
-            // Fail open: if Redis is down, allow the request to proceed (better than total outage)
-            next(); 
-        }
-    };
-};
-
-// Apply rate limiting to login/signup
-const authRateLimiter = rateLimit('auth', 10, 60); // 10 req per minute per IP
-
-// ---------------------------------------------------
-// 6. Authentication Middleware (Enhanced Type Safety)
-// ---------------------------------------------------
-const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'Missing or invalid Authorization header' });
-    }
-    const token = authHeader.split(' ')[1]; // Correct array access
-    try {
-        const payload: any = jwt.verify(token, JWT_SECRET!);
-        req.user = { userId: payload.sub, role: payload.role };
-        next();
-    } catch {
-        logger.warn('AUTHENTICATION_FAILED', { correlationId: req.correlationId });
-        return res.status(401).json({ message: 'Invalid or expired token' });
-    }
-};
-
-// ... (Authentication Routes and Health Check are excellent) ...
-
-// ---------------------------------------------------
-// 9. Example Admin Route (with Audit & Anomaly Detection)
-// ---------------------------------------------------
-app.put(
-    '/users/:id',
-    authMiddleware,
-    adminAuditMiddleware(auditService, 'USER_UPDATE'),
-    async (req: Request, res: Response) => {
-        const adminId = req.user?.userId;
-        if (!adminId) return res.status(403).json({ message: 'Forbidden' }); // Should be caught by authMiddleware but a safe check
-
-        try {
-            // Update user
-            await pool.query('UPDATE users SET email=$1 WHERE id=$2', [req.body.email, req.params.id]);
-            res.json({ success: true, message: `User ${req.params.id} updated.` });
-
-            // --- Anomaly Detection ---
-            // This detection logic is now encapsulated and more robust
-            const key = `audit:count:${adminId}:${new Date().toISOString().slice(0,16)}`;
-            const count = await redis.incr(key);
-            if (count === 1) await redis.expire(key, 60);
-            if (count > 50) {
-                logger.warn('ANOMALY_DETECTED_ADMIN_VELOCITY', { adminId, count, threshold: 50, correlationId: req.correlationId });
-            }
-
-        } catch (err) {
-            logger.error('USER_UPDATE_ERROR', { error: err, correlationId: req.correlationId });
-            res.status(500).json({ message: 'Internal server error' });
-        }
-    }
-);
-
-// ---------------------------------------------------
-// 10. Start Server
-// ---------------------------------------------------
-app.listen(PORT, () => {
-    logger.info(`Auth service running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode.`);
-});
+// Use an Immediately Invoked Function Expression (IIFE) for async startup
+(async () => {
+  try {
+    // Ensure DB connection is successful before starting API listeners
+    await pgPool.connect(); 
+    logger.info('Database connection established successfully.');
+    app.listen(port, () => {
+      logger.info(`auth-service listening on port ${port}`);
+    });
+  } catch (err) {
+    logger.error('Failed to connect to the database on startup', {
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined
+    });
+    // Exit the process if we cannot connect to the DB
+    process.exit(1); 
+  }
+})();
