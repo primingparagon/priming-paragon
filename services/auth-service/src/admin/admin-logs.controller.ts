@@ -1,29 +1,37 @@
-// services/auth-service/src/audit/adminLogsController.ts
+// services/auth-service/src/admin/adminLogsController.ts
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { Pool, QueryResult } from 'pg';
-import { authGuard } from '../auth/guard'; 
-import { logger } from '../logging/logger'; 
+import { authGuard } from '../auth/guard';
+import { logger } from '../logging/logger';
 import { AdminActionData } from './audit.service';
+import {
+  Signal,
+  scoreAnomalyWithThreshold,
+  handleAnomaly,
+  anomalyContext,
+  AnomalyHandlerOptions,
+  ADMIN_SIGNALS // Assumed imported from anomaly-engine.ts
+} from '../security/anomaly-engine';
 
-// Extend the Request interface to know about the user object attached by authGuard
+// Extend Request interface for user and correlationId
 declare global {
   namespace Express {
     interface Request {
-      user?: { userId: number; role: string; };
+      user?: { userId: number; role: string };
       correlationId?: string;
     }
   }
 }
 
-// Define expected query parameters for type safety
 interface AdminLogsQuery {
   limit?: string;
   cursor?: string;
 }
 
 /**
- * Handles API endpoints for reading immutable admin audit logs.
+ * AdminLogsController
+ * Handles immutable admin audit logs with automatic anomaly scoring and batch logging
  */
 export class AdminLogsController {
   private router = Router();
@@ -33,24 +41,43 @@ export class AdminLogsController {
   }
 
   private routes() {
+    // Apply middleware order: authGuard -> setAnomalyContext -> requireAdmin -> wrapWithAnomaly
     this.router.get(
       '/admin/audit-logs',
       authGuard,
+      this.setAnomalyContext,
       this.requireAdmin,
-      this.getLogs.bind(this)
+      this.wrapWithAnomaly(this.getLogs.bind(this), 'FETCH', 'admin_logs')
     );
   }
 
   /**
-   * Authorization guard to ensure only specific, trusted roles can access these sensitive logs.
+   * Middleware to set AsyncLocalStorage context for enriched anomaly metadata
+   */
+  private setAnomalyContext = (req: Request, res: Response, next: NextFunction) => {
+    // We run the entire chain within the context store
+    anomalyContext.run(
+      {
+        // Coalesce potential nulls for type safety/consistency with the engine's context type
+        userId: req.user?.userId ?? null, 
+        correlationId: req.correlationId ?? null,
+        ip: req.ip ?? null,
+        route: req.originalUrl,
+        userAgent: req.headers['user-agent'] ?? null
+      },
+      next
+    );
+  };
+
+  /**
+   * Require admin-level role
    */
   private requireAdmin(req: Request, res: Response, next: NextFunction) {
-    // Check for specific roles allowed to view logs
     if (!['admin', 'security', 'super_admin'].includes(req.user?.role || '')) {
-      logger.warn('ADMIN_LOG_ACCESS_DENIED', { 
-        userId: req.user?.userId, 
-        role: req.user?.role, 
-        correlationId: req.correlationId 
+      logger.warn('ADMIN_LOG_ACCESS_DENIED', {
+        userId: req.user?.userId,
+        role: req.user?.role,
+        correlationId: req.correlationId
       });
       return res.status(403).json({ message: 'Forbidden: Insufficient permissions to view audit logs.' });
     }
@@ -58,53 +85,100 @@ export class AdminLogsController {
   }
 
   /**
-   * Retrieves paginated audit logs using cursor-based pagination (efficient).
+   * Wrapper to auto-score anomalies and enqueue batch logging
+   */
+  private wrapWithAnomaly(
+    handler: (req: Request, res: Response) => Promise<any>,
+    actionName: 'CREATE' | 'UPDATE' | 'DELETE' | 'FETCH',
+    targetResource: string
+  ) {
+    return async (req: Request, res: Response) => {
+      const cursor = req.query.cursor as string | undefined;
+      const isOffHours = this.isOffHours();
+
+      // Pull enriched metadata from AsyncLocalStorage context (guaranteed to exist here due to middleware order)
+      const context = anomalyContext.getStore();
+      const userId = context?.userId;
+      const correlationId = context?.correlationId;
+      const ip = context?.ip;
+      const route = context?.route;
+      const userAgent = context?.userAgent;
+
+      // Generate anomaly signals
+      const signals: Signal[] = [
+        ADMIN_SIGNALS.ADMIN_ENDPOINT,
+        ADMIN_SIGNALS.NON_STANDARD_CURSOR(cursor),
+        ADMIN_SIGNALS.OFF_HOURS_ACCESS(isOffHours)
+      ];
+
+      // Immediate scoring for real-time alerts (uses default engine threshold of 50 unless specified)
+      const { total, exceeded } = scoreAnomalyWithThreshold(signals, 40);
+      if (exceeded) {
+        logger.warn('ANOMALOUS_ADMIN_ACCESS_THRESHOLD_EXCEEDED', {
+          userId,
+          anomalyScore: total,
+          correlationId,
+          actionName,
+          targetResource,
+          cursor,
+          isOffHours
+        });
+      }
+
+      // Fire-and-forget batch logging
+      const handlerOptions: AnomalyHandlerOptions = {
+        pgPool: this.pool,
+        logger,
+        actionName,
+        targetResource,
+        // Pass surrounding metadata to be combined in the engine's handleAnomaly function
+        metadata: { cursor, isOffHours } 
+      };
+      // Use `void` to explicitly mark fire-and-forget
+      void handleAnomaly(signals, handlerOptions);
+
+      await handler(req, res);
+    };
+  }
+
+  /**
+   * Fetch admin audit logs with pagination
    */
   private async getLogs(req: Request, res: Response) {
-    const correlationId = req.correlationId;
+    // Access context via req object as this is a standard Express handler
+    const correlationId = req.correlationId; 
     logger.info('FETCH_ADMIN_LOGS_REQUEST', { userId: req.user?.userId, correlationId, query: req.query });
 
-    // Use the type-safe interface to extract query parameters
     const { limit: limitStr, cursor: cursorStr } = req.query as unknown as AdminLogsQuery;
-
-    // Safely parse and clamp limits (between 1 and 100)
     const limit = Math.min(Math.max(Number(limitStr) > 0 ? Number(limitStr) : 50, 1), 100);
 
-    // Validate cursor input: ensure it is a valid ISO date string
     let cursor: string | undefined;
     if (cursorStr) {
       const parsed = new Date(cursorStr);
-      if (!isNaN(parsed.getTime())) {
-        cursor = parsed.toISOString();
-      } else {
-        // If cursor is invalid, log and return 400 Bad Request
-        logger.warn('INVALID_CURSOR_INPUT', { cursor: cursorStr, correlationId });
-        return res.status(400).json({ message: 'Invalid cursor format. Must be a valid ISO date string.' });
-      }
+      if (!isNaN(parsed.getTime())) cursor = parsed.toISOString();
+      else return res.status(400).json({ message: 'Invalid cursor format. Must be ISO date string.' });
     }
 
     try {
+      // Use deterministic pagination via secondary sort on ID
       const queryText = cursor
-        ? `SELECT * FROM admin_logs WHERE created_at < $1 ORDER BY created_at DESC LIMIT $2`
-        : `SELECT * FROM admin_logs ORDER BY created_at DESC LIMIT $1`;
+        ? `SELECT * FROM admin_logs WHERE created_at < $1 ORDER BY created_at DESC, id DESC LIMIT $2`
+        : `SELECT * FROM admin_logs ORDER BY created_at DESC, id DESC LIMIT $1`;
       const values = cursor ? [cursor, limit] : [limit];
 
       const result: QueryResult<AdminActionData> = await this.pool.query(queryText, values);
-      
-      // Ensure we treat the potentially returned date object as a string for the cursor
-      const nextCursor = result.rows.length > 0 ? (result.rows.at(-1)?.created_at as unknown as string) : undefined;
+
+      const nextCursor = result.rows.length > 0 ? result.rows.at(-1)?.created_at as string : undefined;
 
       res.json({
         logs: result.rows,
         nextCursor,
-        hasMore: result.rows.length === limit // Simple check if more pages are likely available
+        hasMore: result.rows.length === limit
       });
-
-    } catch (error) {
-      // Log errors using the structured logger
+    } catch (err) {
       logger.error('ADMIN_LOG_FETCH_ERROR', {
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
         correlationId,
         userId: req.user?.userId
       });
@@ -112,10 +186,18 @@ export class AdminLogsController {
     }
   }
 
+  /**
+   * Detect off-hours (example: 6 PM – 6 AM)
+   */
+  private isOffHours(): boolean {
+    const hour = new Date().getHours();
+    return hour < 6 || hour > 20;
+  }
+
   getRouter() {
     return this.router;
   }
 }
 
-// Export helper for easy integration into server.ts
+// Export helper
 export const adminLogsRouter = (pool: Pool) => new AdminLogsController(pool).getRouter();
