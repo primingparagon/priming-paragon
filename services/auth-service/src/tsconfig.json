@@ -1,8 +1,43 @@
+json
 {
   "compilerOptions": {
+    /* Base Options */
+    "target": "es2020",                   /* Modern Node.js compatible target */
+    "module": "commonjs",                 /* Node.js standard */
+    "outDir": "../dist",                  /* Compiled files */
+    "rootDir": ".",                        /* Source root */
+    "esModuleInterop": true,               /* Default imports from non-ES modules */
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,                        /* Enable all strict type checks */
+    "skipLibCheck": true,
+    "resolveJsonModule": true,             /* JSON imports (critical for anomaly logging and config) */
+    "moduleResolution": "node",
+    "sourceMap": true,                     /* Debugging support */
+    "inlineSources": true,                 /* Include TS source in maps for easier debugging */
+    "incremental": true,                   /* Speed up rebuilds */
+    "tsBuildInfoFile": "../dist/.tsbuildinfo", /* Cache info for incremental build */
+
+    /* Optional stricter checks for robust type safety */
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictPropertyInitialization": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,      /* Highly recommended for safety */
+
+    /* Path Mapping for monorepo / shared modules */
     "baseUrl": ".",
     "paths": {
       "@priming/shared-ts/*": ["../../shared-ts/*"]
     }
-  }
+  },
+  "include": [
+    "./**/*.ts",      /* Include all TS files in src */
+    "./**/*.json"     /* Include JSON files for imports/configs */
+  ],
+  "exclude": [
+    "node_modules",
+    "../dist"         /* Avoid compiling output folder */
+  ]
 }
